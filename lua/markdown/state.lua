@@ -1,5 +1,8 @@
+---@alias MarkdownViewMode "pretty"|"edit"|"split"
+
 ---@class MarkdownPreviewState
 ---@field is_open boolean
+---@field mode MarkdownViewMode
 ---@field source_buffer number|nil
 ---@field source_window number|nil
 ---@field preview_buffer number|nil
@@ -11,6 +14,7 @@ local M = {}
 
 local DEFAULT_STATE = {
     is_open = false,
+    mode = "pretty",
     source_buffer = nil,
     source_window = nil,
     preview_buffer = nil,
@@ -38,10 +42,6 @@ function M.is_active()
     end
 
     if not M.state.preview_buffer or not vim.api.nvim_buf_is_valid(M.state.preview_buffer) then
-        return false
-    end
-
-    if not M.state.preview_window or not vim.api.nvim_win_is_valid(M.state.preview_window) then
         return false
     end
 

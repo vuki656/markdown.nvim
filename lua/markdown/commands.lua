@@ -4,19 +4,19 @@ function M.setup()
     vim.api.nvim_create_user_command("MarkdownPreview", function()
         require("markdown").open()
     end, {
-        desc = "Open markdown preview",
+        desc = "Open markdown pretty preview",
     })
 
-    vim.api.nvim_create_user_command("MarkdownPreviewClose", function()
-        require("markdown").close()
+    vim.api.nvim_create_user_command("MarkdownEdit", function()
+        require("markdown").edit()
     end, {
-        desc = "Close markdown preview",
+        desc = "Switch to raw markdown editing",
     })
 
-    vim.api.nvim_create_user_command("MarkdownPreviewToggle", function()
-        require("markdown").toggle()
+    vim.api.nvim_create_user_command("MarkdownSplit", function()
+        require("markdown").split()
     end, {
-        desc = "Toggle markdown preview",
+        desc = "Show raw and pretty side by side",
     })
 end
 

@@ -137,8 +137,6 @@ function M.render(node, buffer_number)
         table.insert(result.lines, table.concat(parts))
     end
 
-    table.insert(result.lines, "")
-
     add_border_line("\u{250C}", "\u{252C}", "\u{2510}")
     add_content_row(header_cells, "MarkdownTableHeader")
     add_border_line("\u{251C}", "\u{253C}", "\u{2524}")
@@ -148,8 +146,6 @@ function M.render(node, buffer_number)
     end
 
     add_border_line("\u{2514}", "\u{2534}", "\u{2518}")
-
-    table.insert(result.lines, "")
 
     return result
 end

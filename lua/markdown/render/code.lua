@@ -88,8 +88,6 @@ function M.render_block(node, buffer_number)
 
     local language = treesitter.get_code_block_language(node, buffer_number)
 
-    table.insert(result.lines, "")
-
     local code_lines = vim.split(content, "\n", { plain = true })
 
     if #code_lines > 0 and code_lines[#code_lines] == "" then
@@ -126,7 +124,47 @@ function M.render_block(node, buffer_number)
         end
     end
 
-    table.insert(result.lines, "")
+    return result
+end
+
+---@param node TSNode
+---@param buffer_number number
+---@return RenderResult
+function M.render_html_block(node, buffer_number)
+    local render = require("markdown.render")
+    local result = render.empty_result()
+    local content = treesitter.get_node_text(node, buffer_number)
+
+    if not content or content == "" then
+        return result
+    end
+
+    local code_lines = vim.split(content, "\n", { plain = true })
+
+    if #code_lines > 0 and code_lines[#code_lines] == "" then
+        table.remove(code_lines)
+    end
+
+    local first_code_line = #result.lines
+
+    for _, code_line in ipairs(code_lines) do
+        local line_number = #result.lines
+        table.insert(result.lines, code_line)
+
+        table.insert(result.highlights, {
+            line = line_number,
+            column_start = 0,
+            column_end = -1,
+            group = "MarkdownCodeBlock",
+        })
+    end
+
+    local trimmed_content = table.concat(code_lines, "\n")
+    local syntax_highlights = get_syntax_highlights(trimmed_content, "html", first_code_line, 0)
+
+    for _, highlight in ipairs(syntax_highlights) do
+        table.insert(result.highlights, highlight)
+    end
 
     return result
 end

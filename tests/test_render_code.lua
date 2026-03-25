@@ -37,21 +37,19 @@ end
 
 T["code_block"] = MiniTest.new_set()
 
-T["code_block"]["renders code block with blank line padding"] = function()
+T["code_block"]["renders code block content only"] = function()
     local result = render_code_block("```\nhello world\n```")
 
-    expect.equality(result.lines[1], "")
-    expect.equality(result.lines[2], "  hello world")
-    expect.equality(result.lines[3], "")
+    expect.equality(#result.lines, 1)
+    expect.equality(result.lines[1], "  hello world")
 end
 
 T["code_block"]["renders multi-line code block"] = function()
     local result = render_code_block("```lua\nlocal x = 1\nlocal y = 2\n```")
 
-    expect.equality(result.lines[1], "")
-    expect.equality(result.lines[2], "  local x = 1")
-    expect.equality(result.lines[3], "  local y = 2")
-    expect.equality(result.lines[4], "")
+    expect.equality(#result.lines, 2)
+    expect.equality(result.lines[1], "  local x = 1")
+    expect.equality(result.lines[2], "  local y = 2")
 end
 
 T["code_block"]["applies code block highlight to each line"] = function()

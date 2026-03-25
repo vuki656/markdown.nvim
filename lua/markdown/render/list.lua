@@ -31,6 +31,12 @@ end
 local function get_list_item_text(list_item_node, buffer_number)
     for child in list_item_node:iter_children() do
         if child:type() == "paragraph" then
+            for grandchild in child:iter_children() do
+                if grandchild:type() == "inline" then
+                    return treesitter.get_node_text(grandchild, buffer_number)
+                end
+            end
+
             return treesitter.get_node_text(child, buffer_number)
         end
     end
@@ -50,6 +56,23 @@ local function get_nested_list(list_item_node)
     return nil
 end
 
+---@param list_item_node TSNode
+---@return boolean
+local function has_trailing_blank_line(list_item_node)
+    local item_start_row = list_item_node:range()
+    local _, _, item_end_row = list_item_node:range()
+    local content_lines = 1
+
+    local nested = get_nested_list(list_item_node)
+
+    if nested then
+        local _, _, nested_end_row = nested:range()
+        content_lines = nested_end_row - item_start_row
+    end
+
+    return (item_end_row - item_start_row) > content_lines
+end
+
 ---@param node TSNode
 ---@param buffer_number number
 ---@param nesting_level number
@@ -62,13 +85,21 @@ function M.render(node, buffer_number, nesting_level)
     local indent = string.rep(" ", INDENT_WIDTH * nesting_level)
     local bullet_highlight = nesting_level == 0 and "MarkdownBulletL1" or "MarkdownBulletL2"
 
+    local previous_item_had_trailing_blank = false
+
     for child in node:iter_children() do
         if child:type() == "list_item" then
+            if previous_item_had_trailing_blank then
+                table.insert(result.lines, "")
+            end
+
             item_index = item_index + 1
             local item_text = get_list_item_text(child, buffer_number)
 
             if item_text then
-                local bullet_char = ordered and (item_index .. ".") or (nesting_level == 0 and "\u{2022}" or "\u{25E6}")
+                local bullet_char = ordered
+                        and (item_index .. ".")
+                    or (nesting_level == 0 and "\u{2022}" or "\u{25E6}")
                 local display_bullet = indent .. bullet_char .. " "
 
                 local segments = inline.parse_segments(item_text)
@@ -113,6 +144,8 @@ function M.render(node, buffer_number, nesting_level)
                     })
                 end
             end
+
+            previous_item_had_trailing_blank = has_trailing_blank_line(child)
         end
     end
 

@@ -6,6 +6,37 @@ local M = {}
 ---@field text string
 ---@field highlight string|nil
 
+local EMPHASIS_TYPES = {
+    strong_emphasis = "MarkdownBold",
+    emphasis = "MarkdownItalic",
+    strikethrough = "MarkdownStrikethrough",
+}
+
+---@param node table
+---@return boolean
+local function has_nested_formatting(node)
+    local node_type = node:type()
+
+    for child in node:iter_children() do
+        local child_type = child:type()
+
+        if child_type == node_type then
+            return has_nested_formatting(child)
+        end
+
+        local is_formatting = EMPHASIS_TYPES[child_type]
+            or child_type == "code_span"
+            or child_type == "inline_link"
+            or child_type == "shortcut_link"
+
+        if is_formatting then
+            return true
+        end
+    end
+
+    return false
+end
+
 ---@param source_text string
 ---@return InlineSegment[]
 local function parse_inline_segments(source_text)
@@ -18,43 +49,63 @@ local function parse_inline_segments(source_text)
     local segments = {}
     local last_byte = 0
 
-    local function walk_node(node)
+    local function walk_node(node, parent_highlight)
         local node_type = node:type()
         local _, start_col, _, end_col = node:range()
 
-        if node_type == "strong_emphasis" then
+        local emphasis_highlight = EMPHASIS_TYPES[node_type]
+
+        if emphasis_highlight then
             if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
+                local gap_text = source_text:sub(last_byte + 1, start_col)
+                table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
-            local full_text = source_text:sub(start_col + 1, end_col)
-            local inner_text = full_text:gsub("^%*%*(.-)%*%*$", "%1"):gsub("^__(.-)__$", "%1")
-            table.insert(segments, { text = inner_text, highlight = "MarkdownBold" })
-            last_byte = end_col
-            return
-        elseif node_type == "emphasis" then
-            if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
+            if has_nested_formatting(node) then
+                local saved_last_byte = last_byte
+
+                local is_double_delimiter = node_type == "strong_emphasis" or node_type == "strikethrough"
+                local delimiter_length = is_double_delimiter and 2 or 1
+                last_byte = start_col + delimiter_length
+
+                for child in node:iter_children() do
+                    if child:named() and child:type() ~= "emphasis_delimiter" then
+                        walk_node(child, emphasis_highlight)
+                    end
+                end
+
+                local end_delimiter_start = end_col - delimiter_length
+
+                if last_byte < end_delimiter_start then
+                    table.insert(
+                        segments,
+                        { text = source_text:sub(last_byte + 1, end_delimiter_start), highlight = emphasis_highlight }
+                    )
+                end
+
+                last_byte = end_col
+                _ = saved_last_byte
+            else
+                local full_text = source_text:sub(start_col + 1, end_col)
+                local inner_text = full_text
+
+                if node_type == "strong_emphasis" then
+                    inner_text = full_text:gsub("^%*%*(.-)%*%*$", "%1"):gsub("^__(.-)__$", "%1")
+                elseif node_type == "emphasis" then
+                    inner_text = full_text:gsub("^%*(.-)%*$", "%1"):gsub("^_(.-)_$", "%1")
+                elseif node_type == "strikethrough" then
+                    inner_text = full_text:gsub("^~~(.-)~~$", "%1")
+                end
+
+                table.insert(segments, { text = inner_text, highlight = emphasis_highlight })
+                last_byte = end_col
             end
 
-            local full_text = source_text:sub(start_col + 1, end_col)
-            local inner_text = full_text:gsub("^%*(.-)%*$", "%1"):gsub("^_(.-)_$", "%1")
-            table.insert(segments, { text = inner_text, highlight = "MarkdownItalic" })
-            last_byte = end_col
-            return
-        elseif node_type == "strikethrough" then
-            if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
-            end
-
-            local full_text = source_text:sub(start_col + 1, end_col)
-            local inner_text = full_text:gsub("^~~(.-)~~$", "%1")
-            table.insert(segments, { text = inner_text, highlight = "MarkdownStrikethrough" })
-            last_byte = end_col
             return
         elseif node_type == "code_span" then
             if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
+                local gap_text = source_text:sub(last_byte + 1, start_col)
+                table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
             local full_text = source_text:sub(start_col + 1, end_col)
@@ -64,7 +115,8 @@ local function parse_inline_segments(source_text)
             return
         elseif node_type == "inline_link" then
             if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
+                local gap_text = source_text:sub(last_byte + 1, start_col)
+                table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
             local link_text = nil
@@ -85,7 +137,8 @@ local function parse_inline_segments(source_text)
             return
         elseif node_type == "shortcut_link" then
             if start_col > last_byte then
-                table.insert(segments, { text = source_text:sub(last_byte + 1, start_col), highlight = nil })
+                local gap_text = source_text:sub(last_byte + 1, start_col)
+                table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
             local full_text = source_text:sub(start_col + 1, end_col)
@@ -98,13 +151,13 @@ local function parse_inline_segments(source_text)
         if node:named_child_count() > 0 then
             for child in node:iter_children() do
                 if child:named() then
-                    walk_node(child)
+                    walk_node(child, parent_highlight)
                 end
             end
         end
     end
 
-    walk_node(root)
+    walk_node(root, nil)
 
     if last_byte < #source_text then
         table.insert(segments, { text = source_text:sub(last_byte + 1), highlight = nil })

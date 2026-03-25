@@ -41,13 +41,33 @@ local function render_and_update()
     local namespace = vim.api.nvim_create_namespace("markdown_preview")
     vim.api.nvim_buf_clear_namespace(state.state.preview_buffer, namespace, 0, -1)
 
+    local line_count = #result.lines
+
     for _, highlight in ipairs(result.highlights) do
-        vim.api.nvim_buf_set_extmark(state.state.preview_buffer, namespace, highlight.line, highlight.column_start, {
-            end_col = highlight.column_end ~= -1 and highlight.column_end or nil,
-            end_row = highlight.column_end == -1 and highlight.line or nil,
-            hl_eol = highlight.column_end == -1,
-            hl_group = highlight.group,
-        })
+        if highlight.line < line_count then
+            local line_length = #result.lines[highlight.line + 1]
+            local column_start = math.min(highlight.column_start, line_length)
+            local column_end = highlight.column_end
+
+            if column_end ~= -1 then
+                column_end = math.min(column_end, line_length)
+            end
+
+            if column_start < line_length or column_end == -1 then
+                vim.api.nvim_buf_set_extmark(
+                    state.state.preview_buffer,
+                    namespace,
+                    highlight.line,
+                    column_start,
+                    {
+                        end_col = column_end ~= -1 and column_end or nil,
+                        end_row = column_end == -1 and highlight.line or nil,
+                        hl_eol = column_end == -1,
+                        hl_group = highlight.group,
+                    }
+                )
+            end
+        end
     end
 end
 
@@ -91,34 +111,30 @@ local function setup_buffer_autocmds(source_buffer)
         end,
     })
 
-    vim.api.nvim_create_autocmd("WinScrolled", {
-        group = group,
-        callback = function()
-            if not state.is_active() then
-                return
-            end
+    if state.state.mode == "split" then
+        local scroll = require("markdown.ui.scroll")
+        scroll.bind(state.state.source_window, state.state.preview_window)
 
-            local current_window = vim.api.nvim_get_current_win()
+        vim.api.nvim_create_autocmd("WinClosed", {
+            group = group,
+            pattern = tostring(state.state.preview_window),
+            callback = function()
+                state.reset()
+            end,
+        })
+    end
+end
 
-            if current_window == state.state.source_window then
-                local scroll = require("markdown.ui.scroll")
-                scroll.sync(
-                    state.state.source_buffer,
-                    state.state.source_window,
-                    state.state.preview_buffer,
-                    state.state.preview_window
-                )
-            end
-        end,
-    })
+local function cleanup()
+    if state.state.autocmd_group then
+        vim.api.nvim_del_augroup_by_id(state.state.autocmd_group)
+        state.state.autocmd_group = nil
+    end
 
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = group,
-        pattern = tostring(state.state.preview_window),
-        callback = function()
-            state.reset()
-        end,
-    })
+    if state.state.mode == "split" and state.state.source_window and state.state.preview_window then
+        local scroll = require("markdown.ui.scroll")
+        scroll.unbind(state.state.source_window, state.state.preview_window)
+    end
 end
 
 ---@param options? MarkdownConfig
@@ -143,6 +159,10 @@ function M.setup(options)
                 local filepath = vim.api.nvim_buf_get_name(event.buf)
 
                 if should_ignore(filepath) then
+                    return
+                end
+
+                if state.is_active() and state.state.source_buffer == event.buf then
                     return
                 end
 
@@ -194,19 +214,51 @@ function M.open()
     local source_buffer = vim.api.nvim_get_current_buf()
     local source_window = vim.api.nvim_get_current_win()
 
-    preview_ui.open(source_buffer, source_window)
+    preview_ui.open_pretty(source_buffer, source_window)
     setup_buffer_autocmds(source_buffer)
+    render_and_update()
+end
 
+function M.edit()
+    if not state.is_active() then
+        return
+    end
+
+    cleanup()
+    preview_ui.switch_to_edit()
+    state.reset()
+end
+
+function M.split()
+    local source_buffer
+    local source_window
+
+    if state.is_active() then
+        source_buffer = state.state.source_buffer
+        source_window = state.state.source_window
+        cleanup()
+        preview_ui.close()
+        state.reset()
+
+        if not vim.api.nvim_win_is_valid(source_window) then
+            return
+        end
+
+        vim.api.nvim_win_set_buf(source_window, source_buffer)
+        vim.api.nvim_set_current_win(source_window)
+    else
+        source_buffer = vim.api.nvim_get_current_buf()
+        source_window = vim.api.nvim_get_current_win()
+    end
+
+    preview_ui.open_split(source_buffer, source_window)
+    setup_buffer_autocmds(source_buffer)
     vim.api.nvim_set_current_win(source_window)
-
     render_and_update()
 end
 
 function M.close()
-    if state.state.autocmd_group then
-        vim.api.nvim_del_augroup_by_id(state.state.autocmd_group)
-    end
-
+    cleanup()
     preview_ui.close()
     state.reset()
 end

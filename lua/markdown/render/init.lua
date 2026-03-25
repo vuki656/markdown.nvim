@@ -54,9 +54,13 @@ local function apply_padding(result, padding_width)
     end
 
     for _, highlight in ipairs(result.highlights) do
-        highlight.column_start = highlight.column_start + padding_width
-        if highlight.column_end ~= -1 then
-            highlight.column_end = highlight.column_end + padding_width
+        local line_text = result.lines[highlight.line + 1]
+
+        if line_text and line_text ~= "" then
+            highlight.column_start = highlight.column_start + padding_width
+            if highlight.column_end ~= -1 then
+                highlight.column_end = highlight.column_end + padding_width
+            end
         end
     end
 end
@@ -85,6 +89,9 @@ local function render_node(node, buffer_number)
     elseif node_type == "thematic_break" then
         local horizontal_rule = require("markdown.render.horizontal_rule")
         return horizontal_rule.render()
+    elseif node_type == "html_block" then
+        local code = require("markdown.render.code")
+        return code.render_html_block(node, buffer_number)
     elseif node_type == "paragraph" then
         local inline = require("markdown.render.inline")
         local text = treesitter.get_node_text(node, buffer_number)
@@ -104,13 +111,44 @@ local function render_node(node, buffer_number)
     end
 end
 
----@param section_node TSNode
+---@param node TSNode
 ---@param buffer_number number
----@return RenderResult
-function M.render_section(section_node, buffer_number)
-    local result = M.empty_result()
+---@return number
+local function get_content_end_row(node, buffer_number)
+    local start_row = node:range()
+    local _, _, end_row = node:range()
+    local source_lines = vim.api.nvim_buf_get_lines(buffer_number, 0, -1, false)
 
-    for child, child_type in treesitter.iter_children(section_node) do
+    while end_row > start_row + 1 do
+        local line_text = source_lines[end_row]
+
+        if not line_text or vim.trim(line_text) ~= "" then
+            break
+        end
+
+        end_row = end_row - 1
+    end
+
+    return end_row
+end
+
+---@param children_iter function
+---@param buffer_number number
+---@param result RenderResult
+local function render_children(children_iter, buffer_number, result)
+    local previous_end_row = nil
+
+    for child, child_type in children_iter do
+        local child_start_row = child:range()
+
+        if previous_end_row then
+            local source_gap = child_start_row - previous_end_row
+
+            for _ = 1, source_gap do
+                table.insert(result.lines, "")
+            end
+        end
+
         if child_type == "section" then
             local section_result = M.render_section(child, buffer_number)
             append_result(result, section_result, #result.lines)
@@ -118,7 +156,17 @@ function M.render_section(section_node, buffer_number)
             local node_result = render_node(child, buffer_number)
             append_result(result, node_result, #result.lines)
         end
+
+        previous_end_row = get_content_end_row(child, buffer_number)
     end
+end
+
+---@param section_node TSNode
+---@param buffer_number number
+---@return RenderResult
+function M.render_section(section_node, buffer_number)
+    local result = M.empty_result()
+    render_children(treesitter.iter_children(section_node), buffer_number, result)
 
     return result
 end
@@ -133,16 +181,7 @@ function M.render(buffer_number)
     end
 
     local result = M.empty_result()
-
-    for child, child_type in treesitter.iter_children(root) do
-        if child_type == "section" then
-            local section_result = M.render_section(child, buffer_number)
-            append_result(result, section_result, #result.lines)
-        else
-            local node_result = render_node(child, buffer_number)
-            append_result(result, node_result, #result.lines)
-        end
-    end
+    render_children(treesitter.iter_children(root), buffer_number, result)
 
     local padding_width = config.get().padding
     apply_padding(result, padding_width)

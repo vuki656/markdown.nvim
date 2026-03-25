@@ -6,17 +6,16 @@ local T = MiniTest.new_set()
 
 T["horizontal_rule"] = MiniTest.new_set()
 
-T["horizontal_rule"]["renders with blank lines around it"] = function()
+T["horizontal_rule"]["renders as single content line"] = function()
     local result = horizontal_rule.render()
 
-    expect.equality(result.lines[1], "")
-    expect.equality(result.lines[3], "")
+    expect.equality(#result.lines, 1)
 end
 
 T["horizontal_rule"]["renders with unicode line characters"] = function()
     local result = horizontal_rule.render()
 
-    expect.equality(result.lines[2]:find("\u{2500}") ~= nil, true)
+    expect.equality(result.lines[1]:find("\u{2500}") ~= nil, true)
 end
 
 T["horizontal_rule"]["applies horizontal rule highlight"] = function()
@@ -24,7 +23,7 @@ T["horizontal_rule"]["applies horizontal rule highlight"] = function()
     local rule_highlights = helpers.filter_highlights(result.highlights, "MarkdownHorizontalRule")
 
     expect.equality(#rule_highlights, 1)
-    expect.equality(rule_highlights[1].line, 1)
+    expect.equality(rule_highlights[1].line, 0)
 end
 
 return T

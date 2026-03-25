@@ -70,11 +70,11 @@ T["table"]["renders border characters with border highlight"] = function()
     expect.equality(#border_highlights > 0, true)
 end
 
-T["table"]["renders with blank line padding"] = function()
+T["table"]["renders content only without padding"] = function()
     local result = render_table("| H |\n| - |\n| V |")
 
-    expect.equality(result.lines[1], "")
-    expect.equality(result.lines[#result.lines], "")
+    expect.equality(result.lines[1]:find("\u{250C}") ~= nil, true)
+    expect.equality(result.lines[#result.lines]:find("\u{2514}") ~= nil, true)
 end
 
 return T
