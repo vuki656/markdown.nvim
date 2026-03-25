@@ -59,7 +59,7 @@ local function parse_inline_segments(source_text)
 
             local full_text = source_text:sub(start_col + 1, end_col)
             local inner_text = full_text:gsub("^`(.-)`$", "%1")
-            table.insert(segments, { text = inner_text, highlight = "MarkdownCodeInline" })
+            table.insert(segments, { text = " " .. inner_text .. " ", highlight = "MarkdownCodeInline" })
             last_byte = end_col
             return
         elseif node_type == "inline_link" then

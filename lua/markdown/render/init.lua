@@ -23,7 +23,13 @@ end
 ---@param line_offset number
 local function append_result(result, addition, line_offset)
     for _, line in ipairs(addition.lines) do
-        table.insert(result.lines, line)
+        if line:find("\n") then
+            for _, split_line in ipairs(vim.split(line, "\n", { plain = true })) do
+                table.insert(result.lines, split_line)
+            end
+        else
+            table.insert(result.lines, line)
+        end
     end
 
     for _, highlight in ipairs(addition.highlights) do
@@ -88,7 +94,12 @@ local function render_node(node, buffer_number)
     else
         local text = treesitter.get_node_text(node, buffer_number)
         local result = M.empty_result()
-        table.insert(result.lines, text)
+        local split_lines = vim.split(text, "\n", { plain = true })
+
+        for _, split_line in ipairs(split_lines) do
+            table.insert(result.lines, split_line)
+        end
+
         return result
     end
 end

@@ -38,7 +38,7 @@ M.defaults = {
         heading_2 = { fg = "#61afef", bold = true },
         heading_3 = { fg = "#d55fde", bold = true },
         code_block = { bg = "#21252b" },
-        code_inline = { bg = "#3C4048" },
+        code_inline = { fg = "#d19a66", bg = "#3C4048" },
         bold = { fg = "#a5afbe", bold = true },
         italic = { fg = "#a5afbe", italic = true },
         strikethrough = { fg = "#5c6370", strikethrough = true },

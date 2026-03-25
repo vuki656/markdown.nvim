@@ -44,10 +44,10 @@ T["inline"]["renders italic text with highlight"] = function()
     expect.equality(#italic_highlights, 1)
 end
 
-T["inline"]["renders inline code with highlight"] = function()
+T["inline"]["renders inline code with padding and highlight"] = function()
     local result = inline.render("Use `vim.api` here")
 
-    expect.equality(result.lines[1], "Use vim.api here")
+    expect.equality(result.lines[1], "Use  vim.api  here")
 
     local code_highlights = {}
     for _, highlight in ipairs(result.highlights) do
@@ -58,7 +58,7 @@ T["inline"]["renders inline code with highlight"] = function()
 
     expect.equality(#code_highlights, 1)
     expect.equality(code_highlights[1].column_start, 4)
-    expect.equality(code_highlights[1].column_end, 11)
+    expect.equality(code_highlights[1].column_end, 13)
 end
 
 T["inline"]["renders links as text only"] = function()
