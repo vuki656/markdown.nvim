@@ -201,18 +201,16 @@ function M.setup(options)
 end
 
 function M.open()
-    if state.is_active() then
-        local current_buffer = vim.api.nvim_get_current_buf()
+    local source_buffer = vim.api.nvim_get_current_buf()
+    local source_window = vim.api.nvim_get_current_win()
 
-        if current_buffer == state.state.source_buffer then
+    if state.is_active() then
+        if source_buffer == state.state.source_buffer then
             return
         end
 
         M.close()
     end
-
-    local source_buffer = vim.api.nvim_get_current_buf()
-    local source_window = vim.api.nvim_get_current_win()
 
     preview_ui.open_pretty(source_buffer, source_window)
     setup_buffer_autocmds(source_buffer)
