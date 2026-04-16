@@ -15,6 +15,7 @@
 ---@field table_border table
 ---@field table_header table
 ---@field table_cell table
+---@field table_code_inline table
 ---@field horizontal_rule table
 ---@field normal table
 
@@ -50,6 +51,7 @@ M.defaults = {
         table_border = { fg = "#5c6370" },
         table_header = { fg = "#a5afbe", bold = true },
         table_cell = { fg = "#a5afbe" },
+        table_code_inline = { fg = "#61afef" },
         horizontal_rule = { fg = "#5c6370" },
         normal = { fg = "#a5afbe" },
     },

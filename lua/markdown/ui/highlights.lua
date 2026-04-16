@@ -19,6 +19,7 @@ local HIGHLIGHT_MAP = {
     { group = "MarkdownTableBorder", key = "table_border" },
     { group = "MarkdownTableHeader", key = "table_header" },
     { group = "MarkdownTableCell", key = "table_cell" },
+    { group = "MarkdownTableCodeInline", key = "table_code_inline" },
     { group = "MarkdownHorizontalRule", key = "horizontal_rule" },
     { group = "MarkdownNormal", key = "normal" },
 }
