@@ -2,6 +2,9 @@ local treesitter = require("markdown.treesitter")
 
 local M = {}
 
+local MIN_COLUMN_WIDTH = 8
+local FALLBACK_AVAILABLE_WIDTH = 200
+
 ---@param row_node TSNode
 ---@param buffer_number number
 ---@return string[]
@@ -18,6 +21,134 @@ local function extract_cells(row_node, buffer_number)
     end
 
     return cells
+end
+
+---@return number
+local function get_available_table_width()
+    local state = require("markdown.state")
+    local config = require("markdown.config")
+
+    local padding_width = config.get().padding or 0
+
+    if state.state.preview_window and vim.api.nvim_win_is_valid(state.state.preview_window) then
+        local window_width = vim.api.nvim_win_get_width(state.state.preview_window)
+        return math.max(window_width - padding_width, MIN_COLUMN_WIDTH * 2)
+    end
+
+    local fallback = vim.o.columns
+
+    if not fallback or fallback <= 0 then
+        fallback = FALLBACK_AVAILABLE_WIDTH
+    end
+
+    return math.max(fallback - padding_width, MIN_COLUMN_WIDTH * 2)
+end
+
+---@param text string
+---@param max_width number
+---@return string[]
+local function wrap_cell_text(text, max_width)
+    if max_width < 1 then
+        max_width = 1
+    end
+
+    if vim.fn.strwidth(text) <= max_width then
+        return { text }
+    end
+
+    local lines = {}
+    local current = ""
+
+    local function break_long_word(word)
+        local remaining = word
+
+        while vim.fn.strwidth(remaining) > max_width do
+            local total_chars = vim.fn.strchars(remaining)
+            local low, high = 1, total_chars
+            local fit = 1
+
+            while low <= high do
+                local mid = math.floor((low + high) / 2)
+                local chunk = vim.fn.strcharpart(remaining, 0, mid)
+
+                if vim.fn.strwidth(chunk) <= max_width then
+                    fit = mid
+                    low = mid + 1
+                else
+                    high = mid - 1
+                end
+            end
+
+            table.insert(lines, vim.fn.strcharpart(remaining, 0, fit))
+            remaining = vim.fn.strcharpart(remaining, fit)
+        end
+
+        return remaining
+    end
+
+    for word in text:gmatch("%S+") do
+        local candidate
+
+        if current == "" then
+            candidate = word
+        else
+            candidate = current .. " " .. word
+        end
+
+        if vim.fn.strwidth(candidate) <= max_width then
+            current = candidate
+        else
+            if current ~= "" then
+                table.insert(lines, current)
+                current = ""
+            end
+
+            if vim.fn.strwidth(word) > max_width then
+                current = break_long_word(word)
+            else
+                current = word
+            end
+        end
+    end
+
+    if current ~= "" then
+        table.insert(lines, current)
+    end
+
+    if #lines == 0 then
+        table.insert(lines, "")
+    end
+
+    return lines
+end
+
+---@param column_widths number[]
+---@param max_total_width number
+local function shrink_column_widths(column_widths, max_total_width)
+    local current_total = 0
+
+    for _, width in ipairs(column_widths) do
+        current_total = current_total + width
+    end
+
+    while current_total > max_total_width do
+        local widest_index = 1
+        local widest_value = column_widths[1]
+
+        for index = 2, #column_widths do
+            if column_widths[index] > widest_value then
+                widest_index = index
+                widest_value = column_widths[index]
+            end
+        end
+
+        if widest_value <= MIN_COLUMN_WIDTH then
+            break
+        end
+
+        column_widths[widest_index] = widest_value - 1
+        current_total = current_total - 1
+    end
 end
 
 ---@param node TSNode
@@ -59,6 +190,11 @@ function M.render(node, buffer_number)
         column_widths[column_index] = max_width + 2
     end
 
+    local available_width = get_available_table_width()
+    local borders_width = column_count + 1
+    local content_budget = math.max(available_width - borders_width, column_count * MIN_COLUMN_WIDTH)
+    shrink_column_widths(column_widths, content_budget)
+
     local function build_border(left_char, middle_char, right_char, fill_char)
         local parts = { left_char }
 
@@ -88,53 +224,69 @@ function M.render(node, buffer_number)
     end
 
     local function add_content_row(cells, highlight_group)
-        local line_number = #result.lines
-        local parts = { "\u{2502}" }
-        local cursor = #"\u{2502}"
-
-        table.insert(result.highlights, {
-            line = line_number,
-            column_start = 0,
-            column_end = cursor,
-            group = "MarkdownTableBorder",
-        })
+        local cell_wrapped = {}
+        local row_height = 1
 
         for column_index = 1, column_count do
             local cell_text = cells[column_index] or ""
-            local cell_display_width = vim.fn.strwidth(cell_text)
-            local padding_needed = column_widths[column_index] - cell_display_width - 1
-            local padded_cell = " " .. cell_text .. string.rep(" ", math.max(0, padding_needed))
+            local inner_width = column_widths[column_index] - 2
+            local wrapped_lines = wrap_cell_text(cell_text, inner_width)
+            cell_wrapped[column_index] = wrapped_lines
 
-            table.insert(parts, padded_cell)
-
-            local cell_start = cursor + 1
-            local cell_end = cursor + #cell_text + 1
-
-            if #cell_text > 0 then
-                table.insert(result.highlights, {
-                    line = line_number,
-                    column_start = cell_start,
-                    column_end = cell_end,
-                    group = highlight_group,
-                })
+            if #wrapped_lines > row_height then
+                row_height = #wrapped_lines
             end
+        end
 
-            cursor = cursor + #padded_cell
-
-            local separator = "\u{2502}"
-            table.insert(parts, separator)
+        for line_index = 1, row_height do
+            local line_number = #result.lines
+            local parts = { "\u{2502}" }
+            local cursor = #"\u{2502}"
 
             table.insert(result.highlights, {
                 line = line_number,
-                column_start = cursor,
-                column_end = cursor + #separator,
+                column_start = 0,
+                column_end = cursor,
                 group = "MarkdownTableBorder",
             })
 
-            cursor = cursor + #separator
-        end
+            for column_index = 1, column_count do
+                local cell_text = cell_wrapped[column_index][line_index] or ""
+                local cell_display_width = vim.fn.strwidth(cell_text)
+                local padding_needed = column_widths[column_index] - cell_display_width - 1
+                local padded_cell = " " .. cell_text .. string.rep(" ", math.max(0, padding_needed))
 
-        table.insert(result.lines, table.concat(parts))
+                table.insert(parts, padded_cell)
+
+                local cell_start = cursor + 1
+                local cell_end = cursor + #cell_text + 1
+
+                if #cell_text > 0 then
+                    table.insert(result.highlights, {
+                        line = line_number,
+                        column_start = cell_start,
+                        column_end = cell_end,
+                        group = highlight_group,
+                    })
+                end
+
+                cursor = cursor + #padded_cell
+
+                local separator = "\u{2502}"
+                table.insert(parts, separator)
+
+                table.insert(result.highlights, {
+                    line = line_number,
+                    column_start = cursor,
+                    column_end = cursor + #separator,
+                    group = "MarkdownTableBorder",
+                })
+
+                cursor = cursor + #separator
+            end
+
+            table.insert(result.lines, table.concat(parts))
+        end
     end
 
     add_border_line("\u{250C}", "\u{252C}", "\u{2510}")
