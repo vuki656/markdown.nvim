@@ -65,6 +65,8 @@ function M.render(node, buffer_number)
     local highlight_group = HEADING_HIGHLIGHT_MAP[level]
     local segments = inline.parse_segments(content)
 
+    table.insert(result.lines, "")
+
     local line_number = #result.lines
     local text, highlights = inline.segments_to_line(segments, line_number)
     table.insert(result.lines, text)
@@ -79,6 +81,8 @@ function M.render(node, buffer_number)
     for _, highlight in ipairs(highlights) do
         table.insert(result.highlights, highlight)
     end
+
+    table.insert(result.lines, "")
 
     return result
 end

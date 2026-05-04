@@ -26,44 +26,45 @@ end
 
 T["heading"] = MiniTest.new_set()
 
-T["heading"]["renders h1 as single content line"] = function()
+T["heading"]["renders h1 with surrounding blank lines"] = function()
     local result = render_heading("# Hello World")
 
-    expect.equality(#result.lines, 1)
-    expect.equality(result.lines[1], "Hello World")
+    expect.equality(#result.lines, 3)
+    expect.equality(result.lines[1], "")
+    expect.equality(result.lines[2], "Hello World")
+    expect.equality(result.lines[3], "")
 
     local heading_highlights = helpers.filter_highlights(result.highlights, "MarkdownH1")
     expect.equality(#heading_highlights, 1)
-    expect.equality(heading_highlights[1].line, 0)
+    expect.equality(heading_highlights[1].line, 1)
 end
 
-T["heading"]["renders h2 as single content line"] = function()
+T["heading"]["renders h2 with surrounding blank lines"] = function()
     local result = render_heading("## Section Title")
 
-    expect.equality(#result.lines, 1)
-    expect.equality(result.lines[1], "Section Title")
+    expect.equality(#result.lines, 3)
+    expect.equality(result.lines[2], "Section Title")
 
     local heading_highlights = helpers.filter_highlights(result.highlights, "MarkdownH2")
     expect.equality(#heading_highlights, 1)
-    expect.equality(heading_highlights[1].line, 0)
+    expect.equality(heading_highlights[1].line, 1)
 end
 
-T["heading"]["renders h3 as single content line"] = function()
+T["heading"]["renders h3 with surrounding blank lines"] = function()
     local result = render_heading("### Sub Section")
 
-    expect.equality(#result.lines, 1)
-    expect.equality(result.lines[1], "Sub Section")
+    expect.equality(#result.lines, 3)
+    expect.equality(result.lines[2], "Sub Section")
 
     local heading_highlights = helpers.filter_highlights(result.highlights, "MarkdownH3")
     expect.equality(#heading_highlights, 1)
-    expect.equality(heading_highlights[1].line, 0)
+    expect.equality(heading_highlights[1].line, 1)
 end
 
 T["heading"]["renders h4 through h6 with h3 highlight"] = function()
     local result = render_heading("#### Deep Heading")
 
-    expect.equality(#result.lines, 1)
-    expect.equality(result.lines[1], "Deep Heading")
+    expect.equality(result.lines[2], "Deep Heading")
 
     local heading_highlights = helpers.filter_highlights(result.highlights, "MarkdownH3")
     expect.equality(#heading_highlights, 1)
@@ -72,7 +73,7 @@ end
 T["heading"]["renders heading with bold text"] = function()
     local result = render_heading("## **Bold** Title")
 
-    expect.equality(result.lines[1], "Bold Title")
+    expect.equality(result.lines[2], "Bold Title")
 
     local bold_highlights = helpers.filter_highlights(result.highlights, "MarkdownBold")
     expect.equality(#bold_highlights, 1)
