@@ -167,7 +167,7 @@ function M.setup(options)
                 end
 
                 vim.schedule(function()
-                    M.open()
+                    M.split()
                 end)
             end,
         })
@@ -265,7 +265,7 @@ function M.toggle()
     if state.is_active() then
         M.close()
     else
-        M.open()
+        M.split()
     end
 end
 

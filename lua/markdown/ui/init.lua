@@ -2,8 +2,8 @@ local state = require("markdown.state")
 
 local M = {}
 
-local function apply_preview_window_options(window_id)
-    vim.wo[window_id].number = false
+local function apply_preview_window_options(window_id, mode)
+    vim.wo[window_id].number = mode == "pretty"
     vim.wo[window_id].relativenumber = false
     vim.wo[window_id].signcolumn = "no"
     vim.wo[window_id].foldcolumn = "0"
@@ -32,7 +32,7 @@ function M.open_pretty(source_buffer, source_window)
     local preview_buffer = create_preview_buffer()
 
     vim.api.nvim_win_set_buf(source_window, preview_buffer)
-    apply_preview_window_options(source_window)
+    apply_preview_window_options(source_window, "pretty")
 
     state.state.is_open = true
     state.state.mode = "pretty"
@@ -55,7 +55,7 @@ function M.open_split(source_buffer, source_window)
     local half_width = math.floor(total_width / 2)
     vim.api.nvim_win_set_width(preview_window, half_width)
 
-    apply_preview_window_options(preview_window)
+    apply_preview_window_options(preview_window, "split")
 
     state.state.is_open = true
     state.state.mode = "split"
