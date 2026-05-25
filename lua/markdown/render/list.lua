@@ -4,6 +4,8 @@ local treesitter = require("markdown.treesitter")
 local M = {}
 
 local INDENT_WIDTH = 4
+local CHECKBOX_UNCHECKED = "\u{2610}"
+local CHECKBOX_CHECKED = "\u{2611}"
 
 ---@param node TSNode
 ---@return boolean
@@ -38,6 +40,22 @@ local function get_list_item_text(list_item_node, buffer_number)
             end
 
             return treesitter.get_node_text(child, buffer_number)
+        end
+    end
+
+    return nil
+end
+
+---@param list_item_node TSNode
+---@return "checked"|"unchecked"|nil
+local function get_task_marker_state(list_item_node)
+    for child in list_item_node:iter_children() do
+        local child_type = child:type()
+
+        if child_type == "task_list_marker_checked" then
+            return "checked"
+        elseif child_type == "task_list_marker_unchecked" then
+            return "unchecked"
         end
     end
 
@@ -97,9 +115,22 @@ function M.render(node, buffer_number, nesting_level)
             local item_text = get_list_item_text(child, buffer_number)
 
             if item_text then
-                local bullet_char = ordered
-                        and (item_index .. ".")
-                    or (nesting_level == 0 and "\u{2022}" or "\u{25E6}")
+                local task_state = get_task_marker_state(child)
+                local bullet_char
+                local item_bullet_highlight = bullet_highlight
+
+                if task_state == "checked" then
+                    bullet_char = CHECKBOX_CHECKED
+                    item_bullet_highlight = "MarkdownCheckboxChecked"
+                elseif task_state == "unchecked" then
+                    bullet_char = CHECKBOX_UNCHECKED
+                    item_bullet_highlight = "MarkdownCheckboxUnchecked"
+                elseif ordered then
+                    bullet_char = item_index .. "."
+                else
+                    bullet_char = nesting_level == 0 and "\u{2022}" or "\u{25E6}"
+                end
+
                 local display_bullet = indent .. bullet_char .. " "
 
                 local segments = inline.parse_segments(item_text)
@@ -113,7 +144,7 @@ function M.render(node, buffer_number, nesting_level)
                     line = line_number,
                     column_start = #indent,
                     column_end = #display_bullet,
-                    group = bullet_highlight,
+                    group = item_bullet_highlight,
                 })
 
                 for _, highlight in ipairs(highlights) do
@@ -122,6 +153,15 @@ function M.render(node, buffer_number, nesting_level)
                         column_start = highlight.column_start + #display_bullet,
                         column_end = highlight.column_end + #display_bullet,
                         group = highlight.group,
+                    })
+                end
+
+                if task_state == "checked" then
+                    table.insert(result.highlights, {
+                        line = line_number,
+                        column_start = #display_bullet,
+                        column_end = #full_line,
+                        group = "MarkdownCheckboxDoneText",
                     })
                 end
             end

@@ -10,6 +10,9 @@
 ---@field link table
 ---@field bullet_level_1 table
 ---@field bullet_level_2 table
+---@field checkbox_unchecked table
+---@field checkbox_checked table
+---@field checkbox_done_text table
 ---@field blockquote_bar table
 ---@field blockquote_text table
 ---@field table_border table
@@ -46,6 +49,9 @@ M.defaults = {
         link = { fg = "#61afef", underline = true },
         bullet_level_1 = { fg = "#e5c07b" },
         bullet_level_2 = { fg = "#5c6370" },
+        checkbox_unchecked = { fg = "#5c6370" },
+        checkbox_checked = { fg = "#89ca78" },
+        checkbox_done_text = { fg = "#5c6370", strikethrough = true },
         blockquote_bar = { fg = "#5c6370" },
         blockquote_text = { fg = "#5c6370", italic = true },
         table_border = { fg = "#5c6370" },
