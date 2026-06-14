@@ -85,16 +85,21 @@ function M.switch_to_edit()
     end
 end
 
+local function window_shows_preview(window_id)
+    return vim.api.nvim_win_is_valid(window_id)
+        and vim.api.nvim_win_get_buf(window_id) == state.state.preview_buffer
+end
+
 function M.close()
     if state.state.mode == "pretty" and state.state.source_window then
-        if vim.api.nvim_win_is_valid(state.state.source_window) then
+        if window_shows_preview(state.state.source_window) then
             vim.api.nvim_win_set_buf(state.state.source_window, state.state.source_buffer)
         end
     end
 
     if state.state.mode == "split" and state.state.preview_window then
         if state.state.preview_window ~= state.state.source_window then
-            if vim.api.nvim_win_is_valid(state.state.preview_window) then
+            if window_shows_preview(state.state.preview_window) then
                 vim.api.nvim_win_close(state.state.preview_window, true)
             end
         end

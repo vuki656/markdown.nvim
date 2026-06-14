@@ -22,6 +22,26 @@ local function is_preview_buffer(buffer_number)
     return buffer_number == state.state.preview_buffer
 end
 
+local function should_auto_close(buffer_number)
+    if is_preview_buffer(buffer_number) then
+        return false
+    end
+
+    if buffer_number == state.state.source_buffer then
+        return false
+    end
+
+    if vim.bo[buffer_number].buftype ~= "" then
+        return false
+    end
+
+    if vim.bo[buffer_number].filetype == "markdown" then
+        return false
+    end
+
+    return true
+end
+
 local function render_and_update()
     if not state.is_active() then
         return
@@ -172,24 +192,23 @@ function M.setup(options)
             end,
         })
 
-        vim.api.nvim_create_autocmd("BufLeave", {
+        vim.api.nvim_create_autocmd("BufEnter", {
             group = vim.api.nvim_create_augroup("MarkdownPreviewAutoClose", { clear = true }),
-            pattern = "*.md",
-            callback = function()
+            callback = function(event)
                 if not state.is_active() then
                     return
                 end
 
-                vim.schedule(function()
-                    local current_buffer = vim.api.nvim_get_current_buf()
+                if not should_auto_close(event.buf) then
+                    return
+                end
 
-                    if is_preview_buffer(current_buffer) then
+                vim.schedule(function()
+                    if not state.is_active() then
                         return
                     end
 
-                    local current_filetype = vim.bo[current_buffer].filetype
-
-                    if current_filetype == "markdown" then
+                    if not should_auto_close(vim.api.nvim_get_current_buf()) then
                         return
                     end
 
