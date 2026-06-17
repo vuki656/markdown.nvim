@@ -187,6 +187,10 @@ function M.setup(options)
                 end
 
                 vim.schedule(function()
+                    if state.is_active() and state.state.source_buffer ~= event.buf then
+                        M.close()
+                    end
+
                     M.split()
                 end)
             end,
