@@ -28,25 +28,6 @@ local function is_ordered_list(node)
 end
 
 ---@param list_item_node TSNode
----@param buffer_number number
----@return string|nil
-local function get_list_item_text(list_item_node, buffer_number)
-    for child in list_item_node:iter_children() do
-        if child:type() == "paragraph" then
-            for grandchild in child:iter_children() do
-                if grandchild:type() == "inline" then
-                    return treesitter.get_node_text(grandchild, buffer_number)
-                end
-            end
-
-            return treesitter.get_node_text(child, buffer_number)
-        end
-    end
-
-    return nil
-end
-
----@param list_item_node TSNode
 ---@return "checked"|"unchecked"|nil
 local function get_task_marker_state(list_item_node)
     for child in list_item_node:iter_children() do
@@ -62,33 +43,73 @@ local function get_task_marker_state(list_item_node)
     return nil
 end
 
----@param list_item_node TSNode
----@return TSNode|nil
-local function get_nested_list(list_item_node)
-    for child in list_item_node:iter_children() do
-        if child:type() == "list" then
-            return child
+---@param paragraph_node TSNode
+---@param buffer_number number
+---@return string
+local function get_paragraph_text(paragraph_node, buffer_number)
+    for child in paragraph_node:iter_children() do
+        if child:type() == "inline" then
+            return treesitter.get_node_text(child, buffer_number)
         end
     end
 
-    return nil
+    return treesitter.get_node_text(paragraph_node, buffer_number)
 end
 
----@param list_item_node TSNode
----@return boolean
-local function has_trailing_blank_line(list_item_node)
-    local item_start_row = list_item_node:range()
-    local _, _, item_end_row = list_item_node:range()
-    local content_lines = 1
+---@param result RenderResult
+---@param count number
+local function append_blank_lines(result, count)
+    for _ = 1, count do
+        table.insert(result.lines, "")
+    end
+end
 
-    local nested = get_nested_list(list_item_node)
+---@param result RenderResult
+---@param addition RenderResult
+---@param prefix string
+local function append_indented(result, addition, prefix)
+    local base_line = #result.lines
 
-    if nested then
-        local _, _, nested_end_row = nested:range()
-        content_lines = nested_end_row - item_start_row
+    for _, line in ipairs(addition.lines) do
+        table.insert(result.lines, line == "" and "" or prefix .. line)
     end
 
-    return (item_end_row - item_start_row) > content_lines
+    for _, highlight in ipairs(addition.highlights) do
+        table.insert(result.highlights, {
+            line = highlight.line + base_line,
+            column_start = highlight.column_start + #prefix,
+            column_end = highlight.column_end == -1 and -1 or highlight.column_end + #prefix,
+            group = highlight.group,
+        })
+    end
+end
+
+---@param paragraph_node TSNode
+---@param buffer_number number
+---@param first_line_prefix string
+---@param continuation_prefix string
+---@param result RenderResult
+local function render_paragraph(paragraph_node, buffer_number, first_line_prefix, continuation_prefix, result)
+    local text = get_paragraph_text(paragraph_node, buffer_number)
+    local segments = inline.parse_segments(text)
+    local lines, highlights = inline.segments_to_lines(segments)
+    local base_line = #result.lines
+
+    for line_index, line_text in ipairs(lines) do
+        local prefix = line_index == 1 and first_line_prefix or continuation_prefix
+        table.insert(result.lines, prefix .. line_text)
+    end
+
+    for _, highlight in ipairs(highlights) do
+        local prefix = highlight.line == 0 and first_line_prefix or continuation_prefix
+
+        table.insert(result.highlights, {
+            line = highlight.line + base_line,
+            column_start = highlight.column_start + #prefix,
+            column_end = highlight.column_end + #prefix,
+            group = highlight.group,
+        })
+    end
 end
 
 ---@param node TSNode
@@ -103,89 +124,91 @@ function M.render(node, buffer_number, nesting_level)
     local indent = string.rep(" ", INDENT_WIDTH * nesting_level)
     local bullet_highlight = nesting_level == 0 and "MarkdownBulletL1" or "MarkdownBulletL2"
 
-    local previous_item_had_trailing_blank = false
+    local previous_item_end_row = nil
 
     for child in node:iter_children() do
         if child:type() == "list_item" then
-            if previous_item_had_trailing_blank then
-                table.insert(result.lines, "")
+            local item_start_row = child:range()
+
+            if previous_item_end_row then
+                append_blank_lines(result, math.max(item_start_row - previous_item_end_row, 0))
             end
 
             item_index = item_index + 1
-            local item_text = get_list_item_text(child, buffer_number)
+            local task_state = get_task_marker_state(child)
+            local bullet_char
+            local item_bullet_highlight = bullet_highlight
 
-            if item_text then
-                local task_state = get_task_marker_state(child)
-                local bullet_char
-                local item_bullet_highlight = bullet_highlight
+            if task_state == "checked" then
+                bullet_char = CHECKBOX_CHECKED
+                item_bullet_highlight = "MarkdownCheckboxChecked"
+            elseif task_state == "unchecked" then
+                bullet_char = CHECKBOX_UNCHECKED
+                item_bullet_highlight = "MarkdownCheckboxUnchecked"
+            elseif ordered then
+                bullet_char = item_index .. "."
+            else
+                bullet_char = nesting_level == 0 and "\u{2022}" or "\u{25E6}"
+            end
 
-                if task_state == "checked" then
-                    bullet_char = CHECKBOX_CHECKED
-                    item_bullet_highlight = "MarkdownCheckboxChecked"
-                elseif task_state == "unchecked" then
-                    bullet_char = CHECKBOX_UNCHECKED
-                    item_bullet_highlight = "MarkdownCheckboxUnchecked"
-                elseif ordered then
-                    bullet_char = item_index .. "."
-                else
-                    bullet_char = nesting_level == 0 and "\u{2022}" or "\u{25E6}"
-                end
+            local display_bullet = indent .. bullet_char .. " "
+            local continuation_indent = string.rep(" ", vim.fn.strdisplaywidth(display_bullet))
 
-                local display_bullet = indent .. bullet_char .. " "
+            local bullet_rendered = false
+            local previous_block_end_row = nil
 
-                local segments = inline.parse_segments(item_text)
-                local line_number = #result.lines
-                local text, highlights = inline.segments_to_line(segments, line_number)
-                local full_line = display_bullet .. text
+            for block in child:iter_children() do
+                local block_type = block:type()
 
-                table.insert(result.lines, full_line)
+                if block_type == "paragraph" or block_type == "list" or block_type == "fenced_code_block" then
+                    local block_start_row = block:range()
 
-                table.insert(result.highlights, {
-                    line = line_number,
-                    column_start = #indent,
-                    column_end = #display_bullet,
-                    group = item_bullet_highlight,
-                })
+                    if previous_block_end_row then
+                        append_blank_lines(result, math.max(block_start_row - previous_block_end_row, 0))
+                    end
 
-                for _, highlight in ipairs(highlights) do
-                    table.insert(result.highlights, {
-                        line = highlight.line,
-                        column_start = highlight.column_start + #display_bullet,
-                        column_end = highlight.column_end + #display_bullet,
-                        group = highlight.group,
-                    })
-                end
+                    if block_type == "paragraph" then
+                        local first_line_prefix = bullet_rendered and continuation_indent or display_bullet
+                        local paragraph_start_line = #result.lines
 
-                if task_state == "checked" then
-                    table.insert(result.highlights, {
-                        line = line_number,
-                        column_start = #display_bullet,
-                        column_end = #full_line,
-                        group = "MarkdownCheckboxDoneText",
-                    })
+                        render_paragraph(block, buffer_number, first_line_prefix, continuation_indent, result)
+
+                        if not bullet_rendered then
+                            table.insert(result.highlights, {
+                                line = paragraph_start_line,
+                                column_start = #indent,
+                                column_end = #display_bullet,
+                                group = item_bullet_highlight,
+                            })
+                        end
+
+                        if task_state == "checked" then
+                            for line_number = paragraph_start_line, #result.lines - 1 do
+                                local line_prefix = line_number == paragraph_start_line and first_line_prefix
+                                    or continuation_indent
+
+                                table.insert(result.highlights, {
+                                    line = line_number,
+                                    column_start = #line_prefix,
+                                    column_end = #result.lines[line_number + 1],
+                                    group = "MarkdownCheckboxDoneText",
+                                })
+                            end
+                        end
+
+                        bullet_rendered = true
+                    elseif block_type == "list" then
+                        append_indented(result, M.render(block, buffer_number, nesting_level + 1), "")
+                    else
+                        local code = require("markdown.render.code")
+                        append_indented(result, code.render_block(block, buffer_number), continuation_indent)
+                    end
+
+                    previous_block_end_row = render.get_content_end_row(block, buffer_number)
                 end
             end
 
-            local nested_list = get_nested_list(child)
-
-            if nested_list then
-                local nested_result = M.render(nested_list, buffer_number, nesting_level + 1)
-
-                for _, line in ipairs(nested_result.lines) do
-                    table.insert(result.lines, line)
-                end
-
-                for _, highlight in ipairs(nested_result.highlights) do
-                    table.insert(result.highlights, {
-                        line = highlight.line + #result.lines - #nested_result.lines,
-                        column_start = highlight.column_start,
-                        column_end = highlight.column_end,
-                        group = highlight.group,
-                    })
-                end
-            end
-
-            previous_item_had_trailing_blank = has_trailing_blank_line(child)
+            previous_item_end_row = render.get_content_end_row(child, buffer_number)
         end
     end
 

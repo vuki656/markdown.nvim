@@ -99,4 +99,44 @@ T["inline"]["handles multi-line text"] = function()
     expect.equality(result.lines[2], "Line two")
 end
 
+T["inline"]["renders formatting on continuation lines"] = function()
+    local result = inline.render("Line one\nLine **bold** two")
+
+    expect.equality(#result.lines, 2)
+    expect.equality(result.lines[2], "Line bold two")
+
+    local bold_highlights = {}
+    for _, highlight in ipairs(result.highlights) do
+        if highlight.group == "MarkdownBold" then
+            table.insert(bold_highlights, highlight)
+        end
+    end
+
+    expect.equality(#bold_highlights, 1)
+    expect.equality(bold_highlights[1].line, 1)
+    expect.equality(bold_highlights[1].column_start, 5)
+    expect.equality(bold_highlights[1].column_end, 9)
+end
+
+T["inline"]["renders code span wrapped across lines"] = function()
+    local result = inline.render('domain `[["calendar_id", "in",\n[ids]]]` trailing')
+
+    expect.equality(#result.lines, 2)
+    expect.equality(result.lines[1]:find("`", 1, true), nil)
+    expect.equality(result.lines[2]:find("`", 1, true), nil)
+    expect.equality(result.lines[1]:find('[["calendar_id", "in",', 1, true) ~= nil, true)
+    expect.equality(result.lines[2]:find("[ids]]]", 1, true) ~= nil, true)
+
+    local code_highlights = {}
+    for _, highlight in ipairs(result.highlights) do
+        if highlight.group == "MarkdownCodeInline" then
+            table.insert(code_highlights, highlight)
+        end
+    end
+
+    expect.equality(#code_highlights, 2)
+    expect.equality(code_highlights[1].line, 0)
+    expect.equality(code_highlights[2].line, 1)
+end
+
 return T

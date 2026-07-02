@@ -90,6 +90,18 @@ function M.render_block(node, buffer_number)
 
     local code_lines = vim.split(content, "\n", { plain = true })
 
+    local _, block_start_column = node:range()
+
+    if block_start_column > 0 then
+        local block_indent = string.rep(" ", block_start_column)
+
+        for index, code_line in ipairs(code_lines) do
+            if vim.startswith(code_line, block_indent) then
+                code_lines[index] = code_line:sub(block_start_column + 1)
+            end
+        end
+    end
+
     if #code_lines > 0 and code_lines[#code_lines] == "" then
         table.remove(code_lines)
     end

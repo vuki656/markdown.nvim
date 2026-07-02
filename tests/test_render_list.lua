@@ -69,6 +69,70 @@ T["list"]["renders bold text within list items"] = function()
     expect.equality(#bold_highlights, 1)
 end
 
+T["list"]["renders wrapped item text on separate lines without duplication"] = function()
+    local result = render_list("- First line of item\n  continuation line of item")
+
+    expect.equality(#result.lines, 2)
+    expect.equality(result.lines[1]:find("First line of item", 1, true) ~= nil, true)
+    expect.equality(result.lines[2]:find("continuation line of item", 1, true) ~= nil, true)
+    expect.equality(result.lines[1]:find("continuation", 1, true), nil)
+    expect.equality(result.lines[2]:find("\u{2022}", 1, true), nil)
+end
+
+T["list"]["renders code span wrapped across item lines"] = function()
+    local result = render_list('- domain `[["calendar_id", "in",\n  [ids]]]` trailing')
+
+    expect.equality(result.lines[1]:find("`", 1, true), nil)
+    expect.equality(result.lines[2]:find("`", 1, true), nil)
+    expect.equality(result.lines[1]:find('[["calendar_id", "in",', 1, true) ~= nil, true)
+    expect.equality(result.lines[2]:find("[ids]]]", 1, true) ~= nil, true)
+
+    local code_highlights = helpers.filter_highlights(result.highlights, "MarkdownCodeInline")
+    expect.equality(#code_highlights, 2)
+end
+
+T["list"]["preserves blank line between spaced items"] = function()
+    local result = render_list("- first item\n\n- second item")
+
+    expect.equality(#result.lines, 3)
+    expect.equality(result.lines[2], "")
+    expect.equality(result.lines[3]:find("second item", 1, true) ~= nil, true)
+end
+
+T["list"]["renders fenced code block inside list item"] = function()
+    local markdown_text = table.concat({
+        "1. Save the shape:",
+        "",
+        "   ```json",
+        '   {"key": "value"}',
+        "   ```",
+        "",
+        "   Then run it.",
+    }, "\n")
+
+    local result = render_list(markdown_text)
+    local joined = table.concat(result.lines, "\n")
+
+    expect.equality(joined:find('{"key": "value"}', 1, true) ~= nil, true)
+    expect.equality(joined:find("```", 1, true), nil)
+    expect.equality(result.lines[#result.lines]:find("Then run it.", 1, true) ~= nil, true)
+
+    local code_highlights = helpers.filter_highlights(result.highlights, "MarkdownCodeBlock")
+    expect.equality(#code_highlights, 1)
+end
+
+T["list"]["renders second paragraph of an item under the bullet"] = function()
+    local result = render_list("- first paragraph\n\n  second paragraph")
+
+    expect.equality(#result.lines, 3)
+    expect.equality(result.lines[2], "")
+    expect.equality(result.lines[3]:find("second paragraph", 1, true) ~= nil, true)
+    expect.equality(result.lines[3]:find("\u{2022}", 1, true), nil)
+
+    local bullet_highlights = helpers.filter_highlights(result.highlights, "MarkdownBulletL1")
+    expect.equality(#bullet_highlights, 1)
+end
+
 T["task list"] = MiniTest.new_set()
 
 T["task list"]["renders unchecked task with checkbox glyph"] = function()

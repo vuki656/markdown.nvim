@@ -114,7 +114,7 @@ end
 ---@param node TSNode
 ---@param buffer_number number
 ---@return number
-local function get_content_end_row(node, buffer_number)
+function M.get_content_end_row(node, buffer_number)
     local start_row = node:range()
     local _, _, end_row = node:range()
     local source_lines = vim.api.nvim_buf_get_lines(buffer_number, 0, -1, false)
@@ -157,7 +157,7 @@ local function render_children(children_iter, buffer_number, result)
             append_result(result, node_result, #result.lines)
         end
 
-        previous_end_row = get_content_end_row(child, buffer_number)
+        previous_end_row = M.get_content_end_row(child, buffer_number)
     end
 end
 

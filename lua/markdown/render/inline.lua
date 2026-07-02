@@ -49,24 +49,42 @@ local function parse_inline_segments(source_text)
     local segments = {}
     local last_byte = 0
 
+    local line_start_offsets = { 0 }
+    local search_start = 1
+
+    while true do
+        local newline_index = source_text:find("\n", search_start, true)
+
+        if not newline_index then
+            break
+        end
+
+        table.insert(line_start_offsets, newline_index)
+        search_start = newline_index + 1
+    end
+
+    local function get_byte_range(target_node)
+        local start_row, start_col, end_row, end_col = target_node:range()
+
+        return line_start_offsets[start_row + 1] + start_col, line_start_offsets[end_row + 1] + end_col
+    end
+
     local function walk_node(node, parent_highlight)
         local node_type = node:type()
-        local _, start_col, _, end_col = node:range()
+        local start_byte, end_byte = get_byte_range(node)
 
         local emphasis_highlight = EMPHASIS_TYPES[node_type]
 
         if emphasis_highlight then
-            if start_col > last_byte then
-                local gap_text = source_text:sub(last_byte + 1, start_col)
+            if start_byte > last_byte then
+                local gap_text = source_text:sub(last_byte + 1, start_byte)
                 table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
             if has_nested_formatting(node) then
-                local saved_last_byte = last_byte
-
                 local is_double_delimiter = node_type == "strong_emphasis" or node_type == "strikethrough"
                 local delimiter_length = is_double_delimiter and 2 or 1
-                last_byte = start_col + delimiter_length
+                last_byte = start_byte + delimiter_length
 
                 for child in node:iter_children() do
                     if child:named() and child:type() ~= "emphasis_delimiter" then
@@ -74,7 +92,7 @@ local function parse_inline_segments(source_text)
                     end
                 end
 
-                local end_delimiter_start = end_col - delimiter_length
+                local end_delimiter_start = end_byte - delimiter_length
 
                 if last_byte < end_delimiter_start then
                     table.insert(
@@ -83,10 +101,9 @@ local function parse_inline_segments(source_text)
                     )
                 end
 
-                last_byte = end_col
-                _ = saved_last_byte
+                last_byte = end_byte
             else
-                local full_text = source_text:sub(start_col + 1, end_col)
+                local full_text = source_text:sub(start_byte + 1, end_byte)
                 local inner_text = full_text
 
                 if node_type == "strong_emphasis" then
@@ -98,24 +115,24 @@ local function parse_inline_segments(source_text)
                 end
 
                 table.insert(segments, { text = inner_text, highlight = emphasis_highlight })
-                last_byte = end_col
+                last_byte = end_byte
             end
 
             return
         elseif node_type == "code_span" then
-            if start_col > last_byte then
-                local gap_text = source_text:sub(last_byte + 1, start_col)
+            if start_byte > last_byte then
+                local gap_text = source_text:sub(last_byte + 1, start_byte)
                 table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
-            local full_text = source_text:sub(start_col + 1, end_col)
+            local full_text = source_text:sub(start_byte + 1, end_byte)
             local inner_text = full_text:gsub("^`(.-)`$", "%1")
             table.insert(segments, { text = " " .. inner_text .. " ", highlight = "MarkdownCodeInline" })
-            last_byte = end_col
+            last_byte = end_byte
             return
         elseif node_type == "inline_link" then
-            if start_col > last_byte then
-                local gap_text = source_text:sub(last_byte + 1, start_col)
+            if start_byte > last_byte then
+                local gap_text = source_text:sub(last_byte + 1, start_byte)
                 table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
@@ -123,7 +140,7 @@ local function parse_inline_segments(source_text)
 
             for child in node:iter_children() do
                 if child:type() == "link_text" then
-                    local _, child_start, _, child_end = child:range()
+                    local child_start, child_end = get_byte_range(child)
                     link_text = source_text:sub(child_start + 1, child_end)
                     break
                 end
@@ -133,18 +150,18 @@ local function parse_inline_segments(source_text)
                 table.insert(segments, { text = link_text, highlight = "MarkdownLink" })
             end
 
-            last_byte = end_col
+            last_byte = end_byte
             return
         elseif node_type == "shortcut_link" then
-            if start_col > last_byte then
-                local gap_text = source_text:sub(last_byte + 1, start_col)
+            if start_byte > last_byte then
+                local gap_text = source_text:sub(last_byte + 1, start_byte)
                 table.insert(segments, { text = gap_text, highlight = parent_highlight })
             end
 
-            local full_text = source_text:sub(start_col + 1, end_col)
+            local full_text = source_text:sub(start_byte + 1, end_byte)
             local inner_text = full_text:gsub("^%[(.-)%]$", "%1")
             table.insert(segments, { text = inner_text, highlight = "MarkdownLink" })
-            last_byte = end_col
+            last_byte = end_byte
             return
         end
 
@@ -192,24 +209,54 @@ function M.segments_to_line(segments, line_number)
     return text, highlights
 end
 
+---@param segments InlineSegment[]
+---@return string[]
+---@return RenderHighlight[]
+function M.segments_to_lines(segments)
+    local line_segment_groups = { {} }
+
+    for _, segment in ipairs(segments) do
+        local pieces = vim.split(segment.text, "\n", { plain = true })
+
+        for piece_index, piece in ipairs(pieces) do
+            if piece_index > 1 then
+                table.insert(line_segment_groups, {})
+                piece = (piece:gsub("^%s+", ""))
+            end
+
+            if piece ~= "" then
+                table.insert(line_segment_groups[#line_segment_groups], {
+                    text = piece,
+                    highlight = segment.highlight,
+                })
+            end
+        end
+    end
+
+    local lines = {}
+    local highlights = {}
+
+    for group_index, group in ipairs(line_segment_groups) do
+        local text, line_highlights = M.segments_to_line(group, group_index - 1)
+
+        table.insert(lines, text)
+
+        for _, highlight in ipairs(line_highlights) do
+            table.insert(highlights, highlight)
+        end
+    end
+
+    return lines, highlights
+end
+
 ---@param source_text string
 ---@return RenderResult
 function M.render(source_text)
     local render = require("markdown.render")
     local result = render.empty_result()
-    local raw_lines = vim.split(source_text, "\n", { plain = true })
+    local segments = parse_inline_segments(source_text)
 
-    for _, raw_line in ipairs(raw_lines) do
-        local segments = parse_inline_segments(raw_line)
-        local line_number = #result.lines
-        local text, highlights = M.segments_to_line(segments, line_number)
-
-        table.insert(result.lines, text)
-
-        for _, highlight in ipairs(highlights) do
-            table.insert(result.highlights, highlight)
-        end
-    end
+    result.lines, result.highlights = M.segments_to_lines(segments)
 
     return result
 end
