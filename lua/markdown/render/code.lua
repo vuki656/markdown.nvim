@@ -17,6 +17,21 @@ local function get_code_content(node, buffer_number)
     return nil
 end
 
+---@param capture_name string
+---@param language string
+---@return string
+local function resolve_highlight_group(capture_name, language)
+    local language_specific = "@" .. capture_name .. "." .. language
+
+    local resolved = vim.api.nvim_get_hl(0, { name = language_specific })
+
+    if not resolved or (not resolved.fg and not resolved.bg and not resolved.link) then
+        return "@" .. capture_name
+    end
+
+    return language_specific
+end
+
 ---@param content string
 ---@param language string
 ---@param base_line number
@@ -25,13 +40,15 @@ end
 local function get_syntax_highlights(content, language, base_line, indent_width)
     local highlights = {}
 
-    local has_language = pcall(vim.treesitter.language.add, language)
+    local resolved_language = vim.treesitter.language.get_lang(language) or language
+
+    local has_language = pcall(vim.treesitter.language.add, resolved_language)
 
     if not has_language then
         return highlights
     end
 
-    local has_parser, parser = pcall(vim.treesitter.get_string_parser, content, language)
+    local has_parser, parser = pcall(vim.treesitter.get_string_parser, content, resolved_language)
 
     if not has_parser then
         return highlights
@@ -43,31 +60,31 @@ local function get_syntax_highlights(content, language, base_line, indent_width)
         return highlights
     end
 
-    local query_ok, query = pcall(vim.treesitter.query.get, language, "highlights")
+    local query_ok, query = pcall(vim.treesitter.query.get, resolved_language, "highlights")
 
     if not query_ok or not query then
         return highlights
     end
 
+    local content_lines = vim.split(content, "\n", { plain = true })
+
     for capture_id, node in query:iter_captures(trees[1]:root(), content) do
         local capture_name = query.captures[capture_id]
         local start_row, start_col, end_row, end_col = node:range()
+        local highlight_group = resolve_highlight_group(capture_name, resolved_language)
 
-        if start_row == end_row then
-            local highlight_group = "@" .. capture_name .. "." .. language
+        for row = start_row, end_row do
+            local column_start = row == start_row and start_col or 0
+            local column_end = row == end_row and end_col or #(content_lines[row + 1] or "")
 
-            local resolved = vim.api.nvim_get_hl(0, { name = highlight_group })
-
-            if not resolved or (not resolved.fg and not resolved.bg and not resolved.link) then
-                highlight_group = "@" .. capture_name
+            if column_end > column_start then
+                table.insert(highlights, {
+                    line = base_line + row,
+                    column_start = indent_width + column_start,
+                    column_end = indent_width + column_end,
+                    group = highlight_group,
+                })
             end
-
-            table.insert(highlights, {
-                line = base_line + start_row,
-                column_start = indent_width + start_col,
-                column_end = indent_width + end_col,
-                group = highlight_group,
-            })
         end
     end
 
